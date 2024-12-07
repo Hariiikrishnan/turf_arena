@@ -63,7 +63,7 @@ class InitialScreen extends StatelessWidget {
                     //       bottom: Radius.elliptical(
                     //           MediaQuery.of(context).size.width, 100.0)),
                     // ),
-                    color: primaryColor,
+                    color: Colors.orange.withOpacity(0.75),
                     width: double.infinity,
                     height: double.infinity,
                     child: Padding(

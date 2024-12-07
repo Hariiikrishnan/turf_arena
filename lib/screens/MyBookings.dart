@@ -82,12 +82,13 @@ class _MyBookingsState extends State<MyBookings> {
   //   }
   // }
 
-  Future<void> fetchTurfs() async {
+  Future<void> fetchBookings() async {
     CollectionReference bookings =
         FirebaseFirestore.instance.collection('bookings');
 
     Query query = bookings
-        .where('u_id', isEqualTo: widget.details['userid'])
+        .where('u_id', isEqualTo: widget.details['uid'])
+        // .where('paid', isEqualTo: true)
         .limit(_documentLimit);
 
     if (_lastDocument != null) {
@@ -127,7 +128,7 @@ class _MyBookingsState extends State<MyBookings> {
       _isLoading = true;
     });
 
-    await fetchTurfs(); // Your existing data fetch method
+    await fetchBookings(); // Your existing data fetch method
 
     setState(() {
       _isLoading = false;
@@ -189,27 +190,27 @@ class _MyBookingsState extends State<MyBookings> {
           padding: const EdgeInsets.only(
             left: 20.0,
             right: 20.0,
-            top: 70.0,
+            top: 50.0,
           ),
           child: Column(
             children: [
               Container(
                 child: Row(
-                  // mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    IconButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      highlightColor: greyColor,
-                      color: whiteColor,
-                      focusColor: secondaryColor,
-                      icon: Icon(
-                        Icons.arrow_back_rounded,
-                        // color: whiteColor,
-                        size: 30.0,
-                      ),
-                    ),
+                    // IconButton(
+                    //   onPressed: () {
+                    //     Navigator.pop(context);
+                    //   },
+                    //   highlightColor: greyColor,
+                    //   color: whiteColor,
+                    //   focusColor: secondaryColor,
+                    //   icon: Icon(
+                    //     Icons.arrow_back_rounded,
+                    //     // color: whiteColor,
+                    //     size: 30.0,
+                    //   ),
+                    // ),
                     Container(
                       width: MediaQuery.of(context).size.width / 1.5,
                       child: Center(
@@ -251,6 +252,8 @@ class _MyBookingsState extends State<MyBookings> {
                                   'turfName': "Lorem Ipsum",
                                   'date': '00-00-00',
                                   'bookedTime': "00:00 00-00-00",
+                                  "from": "7 AM",
+                                  "to": "8 AM",
                                 }, Color.fromARGB(232, 215, 214, 214)),
                               );
                             }
@@ -311,9 +314,9 @@ class BookingWidget extends StatelessWidget {
   Color bgColor;
   Map details;
 
-  String capitalize(String text) {
+  String capitalize(String? text) {
     if (text == null || text.isEmpty) {
-      return text; // Return as is if the string is null or empty
+      return text!; // Return as is if the string is null or empty
     }
     return text.split(' ').map((word) {
       if (word.isEmpty) return word;
@@ -328,7 +331,7 @@ class BookingWidget extends StatelessWidget {
         vertical: 7.0,
       ),
       child: Container(
-        height: 150.0,
+        // height: 170.0,
         decoration: BoxDecoration(
             color: bgColor,
             borderRadius: BorderRadius.circular(
@@ -349,6 +352,9 @@ class BookingWidget extends StatelessWidget {
                         topRight: Radius.circular(50.0),
                         bottomRight: Radius.circular(50.0),
                       )),
+                ),
+                SizedBox(
+                  height: 30.0,
                 ),
                 Container(
                   height: 25.0,
@@ -388,6 +394,17 @@ class BookingWidget extends StatelessWidget {
                       ),
                     ),
                     Text(
+                      "Time : " +
+                          " From " +
+                          details['from'] +
+                          " to " +
+                          details['to'],
+                      style: TextStyle(
+                        color: secondaryColor,
+                        fontSize: 16.0,
+                      ),
+                    ),
+                    Text(
                       "Booked at : " + details['bookedTime'],
                       style: TextStyle(
                         color: secondaryColor,
@@ -418,6 +435,9 @@ class BookingWidget extends StatelessWidget {
                         topLeft: Radius.circular(50.0),
                         bottomLeft: Radius.circular(50.0),
                       )),
+                ),
+                SizedBox(
+                  height: 30.0,
                 ),
                 Container(
                   height: 25.0,

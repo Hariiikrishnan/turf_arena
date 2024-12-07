@@ -40,6 +40,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // appBar: AppBar(
       //   title: Text("Dhanush Turf"),
       // ),
+
       resizeToAvoidBottomInset: false,
       body: Container(
         width: double.infinity,
@@ -55,22 +56,49 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.only(
                   left: 35.0,
                   right: 35.0,
-                  top: 55.0,
+                  top: 35.0,
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     ProfileHeader(widget.userDetails),
-                    TextField(
-                      onSubmitted: (value) {
-                        Navigator.of(context).push(
-                          _createRoute(
-                            TurfsList(value, widget.userDetails),
+                    Padding(
+                      padding: const EdgeInsets.only(
+                          // left: 35.0,
+                          // right: 35.0,
+                          // top: 55.0,
                           ),
-                        );
-                      },
-                      textInputAction: TextInputAction.search,
-                      decoration: kTextFieldDecoration,
+                      child: Container(
+                        child: TextField(
+                          style: TextStyle(
+                            color: whiteColor,
+                          ),
+                          onSubmitted: (value) {
+                            Navigator.of(context).push(
+                              _createRoute(
+                                TurfsList(value, widget.userDetails),
+                              ),
+                            );
+                          },
+                          textInputAction: TextInputAction.search,
+                          decoration: kTextFieldDecoration,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(30.0),
+                          // backgroundBlendMode: BlendMode.screen,
+                          border: Border.all(
+                            width: 1.0,
+                            color: whiteColor,
+                          ),
+                          image: DecorationImage(
+                            fit: BoxFit.cover,
+                            opacity: 0.6,
+                            image: AssetImage(
+                              "images/grass_bg.jpg",
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),

@@ -1,4 +1,5 @@
 import 'package:turf_arena/constants.dart';
+import 'package:turf_arena/screens/SetProfile.dart';
 import 'package:turf_arena/screens/app.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -7,8 +8,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Otpscreen extends StatefulWidget {
-  const Otpscreen({required this.verificationId});
+  Otpscreen({
+    required this.verificationId,
+    required this.userData,
+    required this.phoneNo,
+  });
+
+  Map<dynamic, dynamic> userData;
   final String verificationId;
+  String phoneNo;
+  // String url;
   @override
   State<Otpscreen> createState() => _OtpscreenState();
 }
@@ -19,6 +28,25 @@ class _OtpscreenState extends State<Otpscreen> {
   bool loadGoogleSign = false;
   late String username;
   late String password;
+
+  Route _createRoute(Widget ScreenName) {
+    return PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => ScreenName,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(1.0, 0.0);
+        const end = Offset.zero;
+        const curve = Curves.ease;
+
+        var tween =
+            Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+
+        return SlideTransition(
+          position: animation.drive(tween),
+          child: child,
+        );
+      },
+    );
+  }
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     // Optional clientId
@@ -77,6 +105,33 @@ class _OtpscreenState extends State<Otpscreen> {
     }
   }
 
+  Future<void> updateUserToFirestore() async {
+    try {
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userData['uid'])
+          .get();
+      if (userDoc.exists) {
+        setState(() {
+          widget.userData['phone'] = widget.phoneNo;
+          // widget.userData['phototURL'] = widget.url;
+        });
+
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.userData['uid'])
+            .set(widget.userData.cast<String, dynamic>());
+        Navigator.of(context).push(_createRoute(
+          App(
+            widget.userData,
+          ),
+        ));
+      }
+    } catch (e) {
+      print('Error adding user to Firestore: $e');
+    }
+  }
+
   Future<void> addUserToFirestore(User user) async {
     try {
       DocumentSnapshot userDoc = await FirebaseFirestore.instance
@@ -98,9 +153,254 @@ class _OtpscreenState extends State<Otpscreen> {
   }
 
   @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    print(widget.verificationId);
+  }
+
+  // Define controllers for each TextField
+  final TextEditingController controller1 = TextEditingController();
+  final TextEditingController controller2 = TextEditingController();
+  final TextEditingController controller3 = TextEditingController();
+  final TextEditingController controller4 = TextEditingController();
+  final TextEditingController controller5 = TextEditingController();
+  final TextEditingController controller6 = TextEditingController();
+
+  // Function to get combined string
+  String getCombinedOtp() {
+    return controller1.text +
+        controller2.text +
+        controller3.text +
+        controller4.text +
+        controller5.text +
+        controller6.text;
+  }
+
+  @override
+  void dispose() {
+    // Dispose controllers to avoid memory leaks
+    controller1.dispose();
+    controller2.dispose();
+    controller3.dispose();
+    controller4.dispose();
+    controller5.dispose();
+    controller6.dispose();
+    super.dispose();
+  }
+
+  // void _verifyOtp(otp) async {
+  //   // String otp = otpController.text.trim();
+
+  //   // Create PhoneAuthCredential with OTP
+  //   PhoneAuthCredential credential = PhoneAuthProvider.credential(
+  //     verificationId: widget.verificationId!,
+  //     smsCode: otp,
+  //   );
+
+  //   // Sign in the user
+  //   try {
+  //     // await _auth.signInWithCredential(credential);
+  //     print("Phone number verified and user signed in.");
+  //     // updateUserToFirestore();
+  //     setState(() {
+  //       widget.userData['phone'] = widget.phoneNo;
+  //     });
+  //     Navigator.of(context).push(_createRoute(
+  //       SetProfile(
+  //         widget.userData,
+  //       ),
+  //     ));
+  //     setState(() {
+  //       showSpinner = false;
+  //     });
+  //   } catch (e) {
+  //     setState(() {
+  //       showSpinner = false;
+  //     });
+  //     print("Failed to sign in: ${e.toString()}");
+  //   }
+  // }
+
+  void _verifyOtp(String otp) async {
+    // Show spinner while verifying
+    setState(() {
+      showSpinner = true;
+    });
+
+    // Check if verificationId is available
+    if (widget.verificationId == null) {
+      print("Verification ID is null.");
+      setState(() {
+        showSpinner = false;
+      });
+      return;
+    }
+
+    try {
+      // Create PhoneAuthCredential with OTP
+      PhoneAuthCredential credential = PhoneAuthProvider.credential(
+        verificationId: widget.verificationId!,
+        smsCode: otp,
+      );
+
+      // Sign in the user
+      await _auth.signInWithCredential(credential);
+      print("Phone number verified and user signed in.");
+
+      // Update user data
+      setState(() {
+        widget.userData['phone'] = widget.phoneNo;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(
+            30.0,
+          )),
+          // margin: EdgeInsets.symmetric(
+          //   horizontal: 20.0,
+          //   vertical: 50.0,
+          // ),
+          padding: EdgeInsets.symmetric(
+            horizontal: 20.0,
+            vertical: 20.0,
+          ),
+          // elevation: 6.0,
+          // behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.green[400],
+          content: Text(
+            "Phone Number Authenticated.",
+            style: TextStyle(
+              fontSize: 17.0,
+            ),
+          ),
+        ),
+      );
+      // Navigate to next screen
+      Navigator.of(context).pushReplacement(
+        _createRoute(
+          SetProfile(widget.userData),
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        showSpinner = false;
+      });
+      print(e.code);
+      // Check for incorrect OTP error
+      if (e.code == 'invalid-verification-code') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(
+              30.0,
+            )),
+            padding: EdgeInsets.symmetric(
+              horizontal: 20.0,
+              vertical: 20.0,
+            ),
+            backgroundColor: Colors.red[400],
+            content: Text(
+              "OTP is incorrect. Please try again.",
+              style: TextStyle(
+                fontSize: 17.0,
+              ),
+            ),
+          ),
+        );
+      } else if (e.code == 'session-expired') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(
+              30.0,
+            )),
+            // margin: EdgeInsets.symmetric(
+            //   horizontal: 20.0,
+            //   vertical: 50.0,
+            // ),
+            padding: EdgeInsets.symmetric(
+              horizontal: 20.0,
+              vertical: 20.0,
+            ),
+            // elevation: 6.0,
+            // behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.red[400],
+            content: Text(
+              "OTP has expired. Please request a new one.",
+              style: TextStyle(
+                fontSize: 17.0,
+              ),
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(
+              30.0,
+            )),
+            // margin: EdgeInsets.symmetric(
+            //   horizontal: 20.0,
+            //   vertical: 50.0,
+            // ),
+            padding: EdgeInsets.symmetric(
+              horizontal: 20.0,
+              vertical: 20.0,
+            ),
+            // elevation: 6.0,
+            // behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.red[400],
+            content: Text(
+              "Failed to verify OTP: ${e.message}",
+              style: TextStyle(
+                fontSize: 17.0,
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        showSpinner = false;
+      });
+
+      // General error handling
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(
+            30.0,
+          )),
+          // margin: EdgeInsets.symmetric(
+          //   horizontal: 20.0,
+          //   vertical: 50.0,
+          // ),
+          padding: EdgeInsets.symmetric(
+            horizontal: 20.0,
+            vertical: 5.0,
+          ),
+          // elevation: 6.0,
+          // behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red[400],
+          content: Text("An error occurred: ${e.toString()}"),
+        ),
+      );
+    } finally {
+      // Stop showing spinner
+      setState(() {
+        showSpinner = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: primaryColor,
+      resizeToAvoidBottomInset: false,
       body: Container(
         child: Column(
           children: [
@@ -159,30 +459,150 @@ class _OtpscreenState extends State<Otpscreen> {
                             Expanded(
                               child: TextField(
                                 decoration: kOtpDecoration,
+                                controller: controller1,
+                                style: TextStyle(
+                                  color: primaryColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 18.0,
+                                ),
+                                textAlign: TextAlign.start,
+                                maxLength: 1,
+                                buildCounter: (context,
+                                        {required currentLength,
+                                        required isFocused,
+                                        maxLength}) =>
+                                    null,
+                                keyboardType: TextInputType.number,
+                                onChanged: (value) {
+                                  print(value);
+                                  if (value.length == 1)
+                                    FocusScope.of(context).nextFocus();
+                                },
                               ),
                             ),
                             SizedBox(
-                              width: 20.0,
+                              width: 10.0,
                             ),
                             Expanded(
                               child: TextField(
                                 decoration: kOtpDecoration,
+                                controller: controller2,
+                                style: TextStyle(
+                                  color: primaryColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 18.0,
+                                ),
+                                maxLength: 1,
+                                buildCounter: (context,
+                                        {required currentLength,
+                                        required isFocused,
+                                        maxLength}) =>
+                                    null,
+                                keyboardType: TextInputType.number,
+                                onChanged: (value) {
+                                  if (value.length == 1)
+                                    FocusScope.of(context).nextFocus();
+                                },
                               ),
                             ),
                             SizedBox(
-                              width: 20.0,
+                              width: 10.0,
                             ),
                             Expanded(
                               child: TextField(
                                 decoration: kOtpDecoration,
+                                controller: controller3,
+                                style: TextStyle(
+                                  color: primaryColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 18.0,
+                                ),
+                                maxLength: 1,
+                                buildCounter: (context,
+                                        {required currentLength,
+                                        required isFocused,
+                                        maxLength}) =>
+                                    null,
+                                keyboardType: TextInputType.number,
+                                onChanged: (value) {
+                                  if (value.length == 1)
+                                    FocusScope.of(context).nextFocus();
+                                },
                               ),
                             ),
                             SizedBox(
-                              width: 20.0,
+                              width: 10.0,
                             ),
                             Expanded(
                               child: TextField(
                                 decoration: kOtpDecoration,
+                                controller: controller4,
+                                style: TextStyle(
+                                  color: primaryColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 18.0,
+                                ),
+                                maxLength: 1,
+                                buildCounter: (context,
+                                        {required currentLength,
+                                        required isFocused,
+                                        maxLength}) =>
+                                    null,
+                                keyboardType: TextInputType.number,
+                                onChanged: (value) {
+                                  if (value.length == 1)
+                                    FocusScope.of(context).nextFocus();
+                                },
+                              ),
+                            ),
+                            SizedBox(
+                              width: 10.0,
+                            ),
+                            Expanded(
+                              child: TextField(
+                                decoration: kOtpDecoration,
+                                controller: controller5,
+                                style: TextStyle(
+                                  color: primaryColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 18.0,
+                                ),
+                                maxLength: 1,
+                                buildCounter: (context,
+                                        {required currentLength,
+                                        required isFocused,
+                                        maxLength}) =>
+                                    null,
+                                keyboardType: TextInputType.number,
+                                onChanged: (value) {
+                                  if (value.length == 1)
+                                    FocusScope.of(context).nextFocus();
+                                },
+                              ),
+                            ),
+                            SizedBox(
+                              width: 10.0,
+                            ),
+                            Expanded(
+                              child: TextField(
+                                decoration: kOtpDecoration,
+                                controller: controller6,
+                                style: TextStyle(
+                                  color: primaryColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 18.0,
+                                ),
+                                maxLength: 1,
+                                buildCounter: (context,
+                                        {required currentLength,
+                                        required isFocused,
+                                        maxLength}) =>
+                                    null,
+                                keyboardType: TextInputType.number,
+                                onChanged: (value) {
+                                  if (value.length == 1)
+                                    FocusScope.of(context).nextFocus();
+                                },
                               ),
                             ),
                           ],
@@ -208,19 +628,27 @@ class _OtpscreenState extends State<Otpscreen> {
                       ),
                       TextButton.icon(
                         onPressed: () {
+                          setState(() {
+                            showSpinner = true;
+                          });
                           try {
-                            final cred = PhoneAuthProvider.credential(
-                                verificationId: widget.verificationId,
-                                smsCode: "123456");
+                            print(getCombinedOtp());
 
-                            print(cred);
-                          } catch (error) {}
+                            _verifyOtp(getCombinedOtp());
+                            // final cred = PhoneAuthProvider.credential(
+                            //     verificationId: widget.verificationId,
+                            //     smsCode: "123456");
+
+                            // print(cred);
+                          } catch (error) {
+                            print(error.toString());
+                          }
                         },
                         style: TextButton.styleFrom(
                             backgroundColor: primaryColor,
                             fixedSize: Size(
                               150.0,
-                              30.0,
+                              50.0,
                             ),
                             side: BorderSide(
                               width: 1.0,
@@ -229,18 +657,27 @@ class _OtpscreenState extends State<Otpscreen> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(30.0),
                             )),
-                        icon: Icon(
-                          Icons.arrow_forward,
-                          color: whiteColor,
-                        ),
+                        icon: !showSpinner
+                            ? Icon(
+                                Icons.arrow_forward,
+                                color: whiteColor,
+                              )
+                            : null,
                         iconAlignment: IconAlignment.end,
-                        label: Text(
-                          "Submit",
-                          style: TextStyle(
-                            color: whiteColor,
-                            fontSize: 18.0,
-                          ),
-                        ),
+                        label: showSpinner
+                            ? Transform.scale(
+                                scale: 0.7,
+                                child: CircularProgressIndicator(
+                                  color: whiteColor,
+                                ),
+                              )
+                            : Text(
+                                "Submit",
+                                style: TextStyle(
+                                  color: whiteColor,
+                                  fontSize: 18.0,
+                                ),
+                              ),
                       ),
                     ],
                   ),

@@ -4,6 +4,7 @@ import 'package:turf_arena/screens/LoginScreen.dart';
 import 'package:turf_arena/screens/MyBookings.dart';
 import 'package:turf_arena/screens/OtpScreen.dart';
 import 'package:turf_arena/screens/SetProfile.dart';
+import 'package:turf_arena/screens/VerifyPhone.dart';
 import 'package:turf_arena/screens/booking_success.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -43,6 +44,13 @@ class _ProfilescreenState extends State<Profilescreen> {
     } on Exception catch (_) {
       return false;
     }
+  }
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    // print(widget.details);
   }
 
   @override
@@ -112,7 +120,7 @@ class _ProfilescreenState extends State<Profilescreen> {
                           onPressed: () {
                             Navigator.of(context).push(
                               _createRoute(
-                                SetProfile(),
+                                VerifyPhone(widget.details),
                               ),
                             );
                           },
@@ -168,9 +176,11 @@ class _ProfilescreenState extends State<Profilescreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            "Hello, " + widget.details['displayName'] ??
-                                widget.details['email'] ??
-                                "",
+                            // "hello",
+                            "Hello, " +
+                                (widget.details['displayName'] ??
+                                    widget.details['email'] ??
+                                    ""),
                             style: TextStyle(
                               color: secondaryColor,
                               fontSize: 18.0,
@@ -201,7 +211,8 @@ class _ProfilescreenState extends State<Profilescreen> {
                                   onPressed: () {
                                     Navigator.of(context).push(
                                       _createRoute(
-                                        Editprofile(widget.details),
+                                        // Editprofile(widget.details),
+                                        SetProfile(widget.details),
                                       ),
                                     );
                                   },

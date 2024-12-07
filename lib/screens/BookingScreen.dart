@@ -1,4 +1,5 @@
 import 'package:turf_arena/constants.dart';
+import 'package:turf_arena/screens/PaymentError.dart';
 import 'package:turf_arena/screens/booking_success.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -11,10 +12,12 @@ import 'components/ProfileHeader.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cfpaymentgateway/cfpaymentgatewayservice.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class BookingScreen extends StatefulWidget {
-  BookingScreen(this.details);
+  BookingScreen(this.details, this.userDetails);
   Map details;
+  Map userDetails;
 
   @override
   State<BookingScreen> createState() => _BookingScreenState();
@@ -41,6 +44,8 @@ Route _createRoute(Widget ScreenName) {
 class _BookingScreenState extends State<BookingScreen> {
   // Cashfree Payment Instance
   // CFPaymentGatewayService cfPaymentGatewayService = CFPaymentGatewayService();
+
+  late Map paymentData;
 
   NumberFormat format = NumberFormat.decimalPattern();
   List<String> times = [
@@ -102,6 +107,7 @@ class _BookingScreenState extends State<BookingScreen> {
   String currentDate = DateFormat("d").format(DateTime.now());
   String currentTime = DateFormat().add_H().format(DateTime.now().toLocal());
   bool isTurfAvailable = true;
+  // bool isPaying = false;
 
   List<String> getTimeList(startTime, endTime) {
     int timeToIndex(String time) {
@@ -152,10 +158,20 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   void checkAvailablity() async {
+    print(selectedDate);
     var state = await isAvailable(selectedDate, startValue, endValue);
-    setState(() {
-      isTurfAvailable = state;
-    });
+
+    if (state == false) {
+      setState(() {
+        amount = 0;
+        isTurfAvailable = state;
+      });
+    } else {
+      setState(() {
+        // amount = (endInt - startInt) * 1200;
+        isTurfAvailable = state;
+      });
+    }
   }
 
   void calcAmount(
@@ -177,12 +193,29 @@ class _BookingScreenState extends State<BookingScreen> {
     } else if (endValue.contains('AM') && endInt == 12) {
       endInt = 0; // Convert 12 AM to 0 hours
     }
-    var state = await isAvailable(selectedDate, startValue, endValue);
-    // Calculate the amount
-    setState(() {
-      amount = (endInt - startInt) * 1200;
-      isTurfAvailable = state;
-    });
+
+    if (startValue == endValue) {
+      setState(() {
+        // amount = (endInt - startInt) * 1200;
+        isTurfAvailable = false;
+        amount = 0;
+      });
+    } else {
+      var state = await isAvailable(selectedDate, startValue, endValue);
+      // Calculate the amount
+
+      if (state == false) {
+        setState(() {
+          amount = 0;
+          isTurfAvailable = state;
+        });
+      } else {
+        setState(() {
+          amount = (endInt - startInt) * 1200;
+          isTurfAvailable = state;
+        });
+      }
+    }
 
     // print("Amount: $amount");
     // Print or handle the availability state as needed
@@ -232,41 +265,138 @@ class _BookingScreenState extends State<BookingScreen> {
   // }
 
   bool loadingData = false;
+  bool isPaid = false;
 
-  Future<void> addBooking() async {
+  Future<void> addBooking(String paymentId, bool status) async {
     CollectionReference bookings =
         FirebaseFirestore.instance.collection('bookings');
 
     // await Future.delayed(Duration(seconds: 5));
     final Map<String, dynamic> newBooking = {
-      'bookedTime': "00:07 16-09",
+      'bookedTime': FieldValue.serverTimestamp(),
       'turfName': details['name'],
+      't_id': details['t_id'],
       'date': selectedDate,
       'from': startValue,
-      'paid': true,
-      'payment_id': "wureyaiurtbeiurtbewuyre",
+      'paid': status,
+      'payment_id': paymentId,
       'to': endValue,
-      'u_id': "ZdJQ8w3OsoYqQaNxrMyOV2kVbQu1"
+      'u_id': widget.userDetails['uid'],
     };
     await bookings.doc().set(newBooking);
-    setState(() {
-      loadingData = false;
-    });
+  }
 
-    Navigator.of(context).push(
-      _createRoute(
-        BookingSuccess(),
-      ),
-    );
+  // Future<void> getFunction() async {
+  //   HttpsCallable callable = FirebaseFunctions.instance.httpsCallable(
+  //       'createPayment',
+  //       options: HttpsCallableOptions(timeout: Duration(seconds: 5)));
+  //   final results = await callable();
+  //   print('${results.data}');
+  // }
+  Future<void> getFunction() async {
+    print("calling");
+
+    try {
+      HttpsCallable callable =
+          FirebaseFunctions.instance.httpsCallable("createPayment");
+      dynamic resp = await callable.call({
+        "order_amount": amount,
+        "order_currency": "INR",
+        "customer_details": {
+          // "customer_uid": widget.userDetails['uid'],
+          "customer_id": widget.userDetails['uid'],
+          "customer_name":
+              widget.userDetails['displayName'] ?? widget.userDetails['email'],
+          "customer_email": widget.userDetails['email'],
+          "customer_phone": widget.userDetails['phone'] ?? "",
+        },
+        "order_meta": {
+          "return_url": "https://bookmyturf.netlify.app/",
+        },
+      });
+      print(resp.data);
+      if (resp.data['order_status'] == "ACTIVE") {
+        setState(() {
+          paymentData = resp.data;
+          loadingData = false;
+        });
+        initatePay();
+      }
+    } on FirebaseFunctionsException catch (e) {
+      // Do clever things with e
+      print(e.toString());
+      setState(() {
+        // paymentData = resp.data;
+        loadingData = false;
+      });
+    } catch (e) {
+      // Do other things that might be thrown that I have overlooked
+      print(e.toString());
+      setState(() {
+        // paymentData = resp.data;
+        loadingData = false;
+      });
+    }
+  }
+
+  Future<void> getPaymentStatus(String order_id) async {
+    print("calling payment status function");
+
+    try {
+      HttpsCallable callable =
+          FirebaseFunctions.instance.httpsCallable("getPaymentStatus");
+      dynamic resp = await callable.call({"order_id": order_id});
+      print(resp.data);
+      if (resp.data['order_status'] == "PAID") {
+        setState(() {
+          // paymentData = resp.data;
+          // loadingData = false;
+          isPaid = true;
+        });
+        // initatePay();
+        Navigator.of(context).push(
+          _createRoute(
+            BookingSuccess(),
+          ),
+        );
+        addBooking(order_id, true);
+      } else if (resp.data['order_status'] == "ACTIVE") {
+        Navigator.of(context).push(
+          _createRoute(
+            PaymentError(),
+          ),
+        );
+        setState(() {
+          loadingData = false;
+        });
+      }
+    } on FirebaseFunctionsException catch (e) {
+      // Do clever things with e
+      print(e.toString());
+      // setState(() {
+      //   // paymentData = resp.data;
+      //   loadingData = false;
+      // });
+    } catch (e) {
+      // Do other things that might be thrown that I have overlooked
+      print(e.toString());
+      // setState(() {
+      //   // paymentData = resp.data;
+      //   loadingData = false;
+      // });
+    }
   }
 
   void initatePay() {
     try {
       var session = CFSessionBuilder()
-          .setEnvironment(CFEnvironment.PRODUCTION)
-          .setOrderId("order_id")
+          .setEnvironment(CFEnvironment.SANDBOX)
+          .setOrderId(paymentData['order_id'])
           .setPaymentSessionId(
-              "session_i5v2OpaVL1LS6fhObiHGpx8D0DOxL1nDLxYKi6Nr5WJR3hfYaQmdvFvxzLTP5IC_TwK9ZBUhW67BijMiA_f4M9aR2Pli18r1mr4_c2uxCIUO")
+            paymentData['payment_session_id'],
+          )
+          // "session_Ij7QBOgUL6eFiqExx6UqZFl6859P6gwiFvjpaPfDy3HyfZYQopYHOTtS6cdiW8gJPrGEnyIcF1KFa9gfTNoaLjgcRBRPo4wYVceS24sybMny")
+          // "session_i5v2OpaVL1LS6fhObiHGpx8D0DOxL1nDLxYKi6Nr5WJR3hfYaQmdvFvxzLTP5IC_TwK9ZBUhW67BijMiA_f4M9aR2Pli18r1mr4_c2uxCIUO")
           // "session_QJRvFcu7-AVWhbev9P1AG2KnyqKKNC-PQe-AaCxwNGSgGiAn2DY2pQaLzhaKYUIT4i0h7GeTe7zVFBymodGXSx5Vu44puqVV-4DBXYqd6I0g")
           .build();
 
@@ -284,14 +414,33 @@ class _BookingScreenState extends State<BookingScreen> {
 
       cfPaymentGateway.setCallback((order_id) {
         print(order_id);
-        addBooking();
+
+        getPaymentStatus(order_id);
+        Navigator.pop(context);
       }, (error, order_id) {
         print(error.getMessage());
-        print(order_id);
+        Navigator.of(context).push(
+          _createRoute(
+            PaymentError(),
+          ),
+        );
+        // addBooking(order_id, false);
+        setState(() {
+          loadingData = false;
+        });
+        // print(order_id);
       });
       cfPaymentGateway.doPayment(cfWebCheckout);
     } catch (e) {
       print("Error :" + e.toString());
+      Navigator.of(context).push(
+        _createRoute(
+          PaymentError(),
+        ),
+      );
+      setState(() {
+        loadingData = false;
+      });
     }
   }
 
@@ -300,163 +449,108 @@ class _BookingScreenState extends State<BookingScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
-        return Container(
-          color: Colors.transparent,
-          height: 300,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Container(
-                  height: 5.0,
-                  width: MediaQuery.of(context).size.width / 4,
-                  decoration: BoxDecoration(
-                    color: whiteColor,
-                    borderRadius: BorderRadius.circular(20.0),
+        return StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+          return Container(
+            color: Colors.transparent,
+            height: 300,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Container(
+                    height: 5.0,
+                    width: MediaQuery.of(context).size.width / 4,
+                    decoration: BoxDecoration(
+                      color: whiteColor,
+                      borderRadius: BorderRadius.circular(20.0),
+                    ),
                   ),
                 ),
-              ),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(40.0),
-                    color: Colors.white,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 10.0,
-                      horizontal: 30.0,
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(40.0),
+                      color: Colors.white,
                     ),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        // mainAxisSize: MainAxisSize.center,
-                        children: <Widget>[
-                          Expanded(
-                            flex: 1,
-                            child: Container(
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    "Confirm Booking",
-                                    style: TextStyle(
-                                      fontSize: 17.0,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  IconButton(
-                                      onPressed: () => Navigator.pop(context),
-                                      icon: Icon(
-                                        Icons.cancel,
-                                        size: 30.0,
-                                      ))
-                                ],
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            height: 10.0,
-                          ),
-                          Expanded(
-                            flex: 3,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: Color.fromARGB(234, 71, 104, 157),
-                                    borderRadius: BorderRadius.circular(12.0),
-                                  ),
-                                  height: double.infinity,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(15.0),
-                                    child: Center(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.center,
-                                        children: [
-                                          Text(
-                                            "On",
-                                            style: TextStyle(
-                                              color: whiteColor,
-                                              fontSize: 20.0,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                          Text(
-                                            selectedDate,
-                                            style: TextStyle(
-                                              color: whiteColor,
-                                              fontSize: 20.0,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ],
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 10.0,
+                        horizontal: 30.0,
+                      ),
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          // mainAxisSize: MainAxisSize.center,
+                          children: <Widget>[
+                            Expanded(
+                              flex: 1,
+                              child: Container(
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      "Confirm Booking",
+                                      style: TextStyle(
+                                        fontSize: 17.0,
+                                        fontWeight: FontWeight.w500,
                                       ),
                                     ),
-                                  ),
+                                    IconButton(
+                                        onPressed: () => Navigator.pop(context),
+                                        icon: Icon(
+                                          Icons.cancel,
+                                          size: 30.0,
+                                        ))
+                                  ],
                                 ),
-                                SizedBox(
-                                  width: 10.0,
-                                ),
-                                Expanded(
-                                  child: Container(
+                              ),
+                            ),
+                            SizedBox(
+                              height: 10.0,
+                            ),
+                            Expanded(
+                              flex: 3,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Container(
                                     decoration: BoxDecoration(
                                       color: Color.fromARGB(234, 71, 104, 157),
-                                      // color:
-                                      // Color.fromARGB(
-                                      // 255,
-                                      // 148,
-                                      // 219,
-                                      // 252),
                                       borderRadius: BorderRadius.circular(12.0),
                                     ),
                                     height: double.infinity,
                                     child: Padding(
                                       padding: const EdgeInsets.all(15.0),
                                       child: Center(
-                                        child: Text(
-                                          "Game Starts From " +
-                                              startValue +
-                                              " to " +
-                                              endValue +
-                                              " at " +
-                                              widget.details['name'],
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            color: whiteColor,
-                                            fontSize: 18.0,
-                                            fontWeight: FontWeight.w500,
-                                          ),
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              "On",
+                                              style: TextStyle(
+                                                color: whiteColor,
+                                                fontSize: 20.0,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            Text(
+                                              selectedDate,
+                                              style: TextStyle(
+                                                color: whiteColor,
+                                                fontSize: 20.0,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Container(
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Container(
-                                    child: Text(
-                                      "Rs. " + amount.toString(),
-                                      style: TextStyle(
-                                        fontSize: 22.0,
-                                        fontWeight: FontWeight.w500,
                                       ),
                                     ),
                                   ),
@@ -464,27 +558,36 @@ class _BookingScreenState extends State<BookingScreen> {
                                     width: 10.0,
                                   ),
                                   Expanded(
-                                    child: ElevatedButton(
-                                      onPressed: () {
-                                        initatePay();
-                                        // addBooking();
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            15.0,
-                                          ),
-                                        ),
-                                        backgroundColor: Colors.blue,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color:
+                                            Color.fromARGB(234, 71, 104, 157),
+                                        // color:
+                                        // Color.fromARGB(
+                                        // 255,
+                                        // 148,
+                                        // 219,
+                                        // 252),
+                                        borderRadius:
+                                            BorderRadius.circular(12.0),
                                       ),
-                                      child: const Padding(
-                                        padding: EdgeInsets.all(10.0),
-                                        child: Text(
-                                          "Pay Now",
-                                          style: TextStyle(
-                                            color: whiteColor,
-                                            fontSize: 20.0,
-                                            fontWeight: FontWeight.w700,
+                                      height: double.infinity,
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(15.0),
+                                        child: Center(
+                                          child: Text(
+                                            "Game Starts From " +
+                                                startValue +
+                                                " to " +
+                                                endValue +
+                                                " at " +
+                                                widget.details['name'],
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color: whiteColor,
+                                              fontSize: 18.0,
+                                              fontWeight: FontWeight.w500,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -493,16 +596,94 @@ class _BookingScreenState extends State<BookingScreen> {
                                 ],
                               ),
                             ),
-                          ),
-                        ],
+                            Expanded(
+                              flex: 2,
+                              child: Container(
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceEvenly,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      child: Text(
+                                        "Rs. " + amount.toString(),
+                                        style: TextStyle(
+                                          fontSize: 22.0,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: 10.0,
+                                    ),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          // initatePay();
+                                          setState(() {
+                                            loadingData = true;
+                                          });
+                                          !isPaid ? getFunction() : null;
+
+                                          // addBooking();
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              15.0,
+                                            ),
+                                          ),
+                                          fixedSize: Size(100.0, 55.0),
+                                          backgroundColor: isPaid
+                                              ? Colors.green
+                                              : Colors.blue,
+                                        ),
+                                        child: Padding(
+                                          padding: EdgeInsets.all(10.0),
+                                          child: loadingData
+                                              ? Transform.scale(
+                                                  scale: 0.7,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    color: whiteColor,
+                                                  ),
+                                                )
+                                              : isPaid
+                                                  ? Text(
+                                                      "Paid",
+                                                      style: TextStyle(
+                                                        color: whiteColor,
+                                                        fontSize: 20.0,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    )
+                                                  : Text(
+                                                      "Pay Now",
+                                                      style: TextStyle(
+                                                        color: whiteColor,
+                                                        fontSize: 20.0,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        );
+              ],
+            ),
+          );
+        });
       },
     );
   }
@@ -584,6 +765,7 @@ class _BookingScreenState extends State<BookingScreen> {
     QuerySnapshot snapshot = await bookings
         .where('turfName', isEqualTo: widget.details['name'])
         .where('date', isEqualTo: date)
+        // .where('paid', isEqualTo: true)
         .get();
 
     // List to store all booked time intervals for that date
@@ -614,9 +796,18 @@ class _BookingScreenState extends State<BookingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: primaryColor,
+      backgroundColor: Colors.black,
       body: Container(
-        child: Stack(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage("images/grass_bg.jpg"),
+            repeat: ImageRepeat.repeatX,
+            fit: BoxFit.cover,
+            opacity: 0.6,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Container(
               height: MediaQuery.of(context).size.height / 1.2,
@@ -639,7 +830,7 @@ class _BookingScreenState extends State<BookingScreen> {
                   children: [
                     // ProfileHeader(),
                     Text(
-                      "Booking",
+                      "Grab your Slots! ",
                       style: TextStyle(
                         color: whiteColor,
                         fontSize: 25.0,
@@ -672,6 +863,9 @@ class _BookingScreenState extends State<BookingScreen> {
                                   setState(() {
                                     selectedDate = date;
                                   });
+                                  // checkAvailablity();
+                                  calcAmount(
+                                      selectedDate, startValue, endValue);
                                 },
                                 selectedDate,
                               ),
@@ -689,6 +883,9 @@ class _BookingScreenState extends State<BookingScreen> {
                                   setState(() {
                                     selectedDate = date;
                                   });
+                                  // checkAvailablity();
+                                  calcAmount(
+                                      selectedDate, startValue, endValue);
                                 },
                                 selectedDate,
                               ),
@@ -706,6 +903,9 @@ class _BookingScreenState extends State<BookingScreen> {
                                   setState(() {
                                     selectedDate = date;
                                   });
+                                  // checkAvailablity();
+                                  calcAmount(
+                                      selectedDate, startValue, endValue);
                                 },
                                 selectedDate,
                               ),
@@ -715,14 +915,25 @@ class _BookingScreenState extends State<BookingScreen> {
                       ),
                     ),
                     Container(
+                      // decoration: BoxDecoration(
+                      // color: whiteColor,
+                      // borderRadius: BorderRadius.circular(12.0),
+                      // ),
                       decoration: BoxDecoration(
-                        color: whiteColor,
+                        color: Colors.transparent,
                         borderRadius: BorderRadius.circular(12.0),
+                        image: DecorationImage(
+                          image: AssetImage("images/grass_bg.jpg"),
+                          repeat: ImageRepeat.repeatX,
+                          // fit: BoxFit.cover,
+                          // scale: 1.5,
+                          opacity: 0.6,
+                        ),
                       ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 20.0,
-                          vertical: 10.0,
+                          horizontal: 25.0,
+                          vertical: 20.0,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -730,9 +941,9 @@ class _BookingScreenState extends State<BookingScreen> {
                             Text(
                               "Timing",
                               style: TextStyle(
-                                color: primaryColor,
-                                fontSize: 18.0,
-                                fontWeight: FontWeight.w500,
+                                color: whiteColor,
+                                fontSize: 22.0,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                             SizedBox(
@@ -779,8 +990,8 @@ class _BookingScreenState extends State<BookingScreen> {
                                 Text(
                                   "Slot Availability",
                                   style: TextStyle(
-                                    color: primaryColor,
-                                    fontSize: 15.0,
+                                    color: whiteColor,
+                                    fontSize: 18.0,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -811,43 +1022,144 @@ class _BookingScreenState extends State<BookingScreen> {
                         fontSize: 22.0,
                       ),
                     ),
-                    TextButton(
-                        style: TextButton.styleFrom(
-                          backgroundColor: whiteColor,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20.0),
-                          ),
-                          fixedSize: Size(150, 50),
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            loadingData = true;
-                          });
+                    // TextButton(
+                    //     style: TextButton.styleFrom(
+                    //       backgroundColor: whiteColor,
+                    //       shape: RoundedRectangleBorder(
+                    //         borderRadius: BorderRadius.circular(20.0),
+                    //       ),
+                    //       fixedSize: Size(150, 50),
+                    //     ),
+                    //     onPressed: () {
+                    //       // showModalBottomSheet<void>
 
-                          // showModalBottomSheet<void>
+                    //       showBottomSheet();
+                    //       // initatePay();
 
-                          showBottomSheet();
-                          // initatePay();
-
-                          // addBooking();
-
-                          setState(() {
-                            loadingData = false;
-                          });
-                        },
-                        child: loadingData
-                            ? CircularProgressIndicator()
-                            : Text(
-                                "Book Now",
-                                style: TextStyle(
-                                  color: secondaryColor,
-                                  fontSize: 20.0,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ))
+                    //       // addBooking();
+                    //     },
+                    //     child: Text(
+                    //       "Book Now",
+                    //       style: TextStyle(
+                    //         color: secondaryColor,
+                    //         fontSize: 20.0,
+                    //         fontWeight: FontWeight.w600,
+                    //       ),
+                    //     ))
                   ],
                 ),
               ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: secondaryColor,
+                  borderRadius: BorderRadius.circular(
+                    50.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: greyColor.withOpacity(0.3),
+                      spreadRadius: 1,
+                      blurRadius: 7,
+                      offset: Offset(0, 1), // changes position of shadow
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 25.0,
+                    vertical: 15.0,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            startValue + " to " + endValue,
+                            style: TextStyle(
+                              color: greyColor,
+                              fontSize: 12.0,
+                            ),
+                          ),
+                          Text(
+                            "Rs. " + amount.toString(),
+                            style: TextStyle(
+                              color: whiteColor,
+                              fontSize: 18.0,
+                            ),
+                          ),
+                        ],
+                      ),
+                      TextButton(
+                          style: TextButton.styleFrom(
+                            backgroundColor:
+                                isTurfAvailable ? whiteColor : greyColor,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30.0),
+                            ),
+                            fixedSize: Size(150, 50),
+                          ),
+                          onPressed: () {
+                            // showModalBottomSheet<void>
+                            final snackBar = SnackBar(
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                30.0,
+                              )),
+                              // margin: EdgeInsets.symmetric(
+                              //   horizontal: 20.0,
+                              //   vertical: 50.0,
+                              // ),
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 20.0,
+                                vertical: 5.0,
+                              ),
+                              // elevation: 6.0,
+                              // behavior: SnackBarBehavior.floating,
+                              backgroundColor: Colors.red[400],
+                              content: Text(
+                                'Please Select Different Slot!',
+                                style: TextStyle(
+                                    color: whiteColor,
+                                    fontSize: 18.0,
+                                    fontWeight: FontWeight.w500),
+                              ),
+                              showCloseIcon: true,
+                              closeIconColor: whiteColor,
+                            );
+
+                            isTurfAvailable
+                                ? showBottomSheet()
+                                :
+
+                                // Find the ScaffoldMessenger in the widget tree
+                                // and use it to show a SnackBar.
+                                ScaffoldMessenger.of(context)
+                                    .showSnackBar(snackBar);
+                            ;
+                            // initatePay();
+
+                            // addBooking();
+                          },
+                          child: Text(
+                            "Book Now",
+                            style: TextStyle(
+                              color: secondaryColor,
+                              fontSize: 20.0,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ))
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 10.0,
             ),
           ],
         ),
@@ -922,16 +1234,19 @@ class _BookingScreenState extends State<BookingScreen> {
         Text(
           name,
           style: TextStyle(
-            color: primaryColor,
-            fontSize: 18.0,
-            fontWeight: FontWeight.w500,
+            color: whiteColor,
+            fontSize: 20.0,
+            fontWeight: FontWeight.w600,
           ),
         ),
         Container(
           decoration: BoxDecoration(
-            color: Color.fromARGB(234, 71, 104, 157),
-            borderRadius: BorderRadius.circular(8.0),
-          ),
+              color: Color.fromARGB(234, 71, 104, 157),
+              borderRadius: BorderRadius.circular(8.0),
+              border: Border.all(
+                width: 1.5,
+                color: greyColor,
+              )),
           child: Padding(
             padding: const EdgeInsets.symmetric(
               vertical: 2.0,
@@ -939,6 +1254,7 @@ class _BookingScreenState extends State<BookingScreen> {
             ),
             child: DropdownButton(
               borderRadius: BorderRadius.circular(8.0),
+
               menuMaxHeight: 200,
               alignment: Alignment.topCenter,
               underline: SizedBox(),
@@ -1006,7 +1322,7 @@ class DateTile extends StatelessWidget {
       style: TextButton.styleFrom(
         backgroundColor: selectedDate == date
             ? Color.fromARGB(234, 71, 104, 157)
-            : Color.fromARGB(175, 178, 204, 245),
+            : Colors.grey[350],
         // side: BorderSide(
         //   width: 2.0,
         //   color: scaffoldColor,
@@ -1033,7 +1349,7 @@ class DateTile extends StatelessWidget {
           // DateTime.now().toString(),
           style: TextStyle(
             color: selectedDate == date ? whiteColor : primaryColor,
-            fontSize: 16.0,
+            fontSize: 17.0,
             fontWeight: FontWeight.w600,
           ),
         ),

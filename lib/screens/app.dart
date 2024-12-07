@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:image_picker/image_picker.dart';
 import 'package:turf_arena/screens/MyBookings.dart';
+import 'package:turf_arena/screens/ShowMoment.dart';
 import 'package:turf_arena/screens/TurfsList.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -27,6 +30,8 @@ class _AppState extends State<App> {
     // _initUniLinks();
     print(widget.userDetails);
   }
+
+  File? _image;
 
   // Future<void> _initUniLinks() async {
   //   // Listen for incoming links
@@ -59,6 +64,25 @@ class _AppState extends State<App> {
   void dispose() {
     _sub?.cancel();
     super.dispose();
+  }
+
+  Route _createRoute(Widget ScreenName) {
+    return PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => ScreenName,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(1.0, 0.0);
+        const end = Offset.zero;
+        const curve = Curves.ease;
+
+        var tween =
+            Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+
+        return SlideTransition(
+          position: animation.drive(tween),
+          child: child,
+        );
+      },
+    );
   }
 
   @override
@@ -171,37 +195,54 @@ class _AppState extends State<App> {
               offset: Offset(0, -40),
               child: Transform.scale(
                 scale: 1.5,
-                child: Container(
-                  // transform: Matrix4.translation(1),
+                child: GestureDetector(
+                  onTap: () async {
+                    print("Call Camera");
+                    final image = await ImagePicker().pickImage(
+                      source: ImageSource.camera,
+                      maxHeight: 640,
+                      maxWidth: 640,
+                    );
+                    if (image != null) {
+                      setState(() {
+                        _image = File(image.path);
+                      });
+                      Navigator.of(context)
+                          .push(_createRoute(ShowMoment(_image)));
+                    }
+                  },
+                  child: Container(
+                    // transform: Matrix4.translation(1),
 
-                  decoration: BoxDecoration(
-                    // border: BoxBorder.lerp(a, b, t),
-                    border: Border.all(
+                    decoration: BoxDecoration(
+                      // border: BoxBorder.lerp(a, b, t),
+                      border: Border.all(
+                        color: Colors.white,
+                        width: 3.5,
+                      ),
+                      image: DecorationImage(
+                        fit: BoxFit.fitWidth,
+                        image: AssetImage(
+                          "images/cock.jpg",
+                        ),
+                      ),
                       color: Colors.white,
-                      width: 3.5,
-                    ),
-                    image: DecorationImage(
-                      fit: BoxFit.fitWidth,
-                      image: AssetImage(
-                        "images/cock.jpg",
+                      borderRadius: BorderRadius.all(
+                        Radius.circular(100.0),
                       ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: secondaryColor.withOpacity(0.5),
+                          spreadRadius: 2,
+                          blurRadius: 7,
+                          offset: Offset(0, 2), // changes position of shadow
+                        ),
+                      ],
                     ),
-                    color: Colors.white,
-                    borderRadius: BorderRadius.all(
-                      Radius.circular(100.0),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: secondaryColor.withOpacity(0.5),
-                        spreadRadius: 2,
-                        blurRadius: 7,
-                        offset: Offset(0, 2), // changes position of shadow
-                      ),
-                    ],
-                  ),
 
-                  height: 60.0,
-                  width: 60.0,
+                    height: 60.0,
+                    width: 60.0,
+                  ),
                 ),
               ),
             ),

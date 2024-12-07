@@ -44,6 +44,7 @@ Route _createRoute(Widget ScreenName) {
 
 class _TurfsListState extends State<TurfsList> {
   bool loadingData = true;
+  bool isEmpty = false;
   @override
   void initState() {
     // TODO: implement initState
@@ -63,14 +64,22 @@ class _TurfsListState extends State<TurfsList> {
     });
 
     filter = widget.title;
-    (filter == "Cricket" ||
+    (filter == "Turf" ||
             filter == "Football" ||
             filter == "Badminton" ||
             filter == "Tennis")
         ? fetchTurfs()
         : widget.title == "Saved List"
-            ? fetchSaved()
+            ? checkAndLoadSaved()
             : fetchByName();
+  }
+
+  void checkAndLoadSaved() {
+    widget.userDetails['liked'].length == 0
+        ? setState(() {
+            isEmpty = true;
+          })
+        : fetchSaved();
   }
 
   late String filter;
@@ -95,6 +104,12 @@ class _TurfsListState extends State<TurfsList> {
 
     try {
       QuerySnapshot snapshot = await query.get();
+
+      if (_lastDocument == null && snapshot.docs.length == 0) {
+        setState(() {
+          isEmpty = true;
+        });
+      }
 
       if (snapshot.docs.length < _documentLimit) {
         _hasMore = false; // No more documents to load
@@ -192,6 +207,12 @@ class _TurfsListState extends State<TurfsList> {
           turfList.add(doc.data() as Map<String, dynamic>);
           _isLoading = false;
         });
+
+        if (turfList.isEmpty) {
+          setState(() {
+            isEmpty = true;
+          });
+        }
         print(loadingData);
         // print('${doc.id} => ${doc.data()}');
       });
@@ -222,8 +243,8 @@ class _TurfsListState extends State<TurfsList> {
                 padding: const EdgeInsets.only(
                   left: 25.0,
                   right: 25.0,
-                  top: 80.0,
-                  bottom: 30.0,
+                  top: 40.0,
+                  bottom: 20.0,
                 ),
                 child: Row(
                   // mainAxisAlignment: MainAxisAlignment.start,
@@ -292,34 +313,77 @@ class _TurfsListState extends State<TurfsList> {
                     ),
                     child: RefreshIndicator(
                       onRefresh: _loadMoreData,
-                      child: ListView.builder(
-                        controller: _scrollController,
-                        physics: AlwaysScrollableScrollPhysics(),
-                        itemCount:
-                            _isLoading ? turfList.length + 3 : turfList.length,
-                        itemBuilder: (context, index) {
-                          if (index < turfList.length) {
-                            return TurfTile(
-                                turfList[index], widget.userDetails);
-                          } else if (_isLoading) {
-                            return Skeletonizer(
-                              enabled: true,
-                              enableSwitchAnimation: true,
-                              child: TurfTile({
-                                'name': 'Turf Trichy',
-                                'amtPerHour': "",
-                                'address':
-                                    'Lorem Ipsum Loreum Ipsum Lorem Ipsum Lorem Ipsum Loreum Ipsum Lorem Ipsum',
-                              }, {}),
-                            );
-                          }
-                        },
-                      ),
+                      child: isEmpty
+                          ? NoItems()
+                          : ListView.builder(
+                              controller: _scrollController,
+                              physics: AlwaysScrollableScrollPhysics(),
+                              itemCount: _isLoading
+                                  ? turfList.length + 3
+                                  : turfList.length,
+                              itemBuilder: (context, index) {
+                                if (index < turfList.length) {
+                                  return TurfTile(
+                                      turfList[index], widget.userDetails);
+                                } else if (_isLoading) {
+                                  return Skeletonizer(
+                                    enabled: true,
+                                    enableSwitchAnimation: true,
+                                    child: TurfTile({
+                                      'name': 'Turf Trichy',
+                                      'amtPerHour': "",
+                                      'address':
+                                          'Lorem Ipsum Loreum Ipsum Lorem Ipsum Lorem Ipsum Loreum Ipsum Lorem Ipsum',
+                                    }, {}),
+                                  );
+                                }
+                              },
+                            ),
                     ),
                   ),
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class NoItems extends StatelessWidget {
+  const NoItems({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        height: double.infinity,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.sentiment_dissatisfied_rounded,
+              color: whiteColor,
+              size: 120.0,
+            ),
+            SizedBox(
+              height: 30.0,
+            ),
+            Text(
+              'No Turfs or Courts Found.',
+              style: TextStyle(
+                color: whiteColor,
+                fontSize: 18.0,
+              ),
+            ),
+            // Text(
+            //   "Let's wait for",
+            //   style: TextStyle(
+            //     color: whiteColor,
+            //     fontSize: 18.0,
+            //   ),
+            // ),
           ],
         ),
       ),
@@ -377,7 +441,7 @@ class TurfTile extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16.0),
-          color: whiteColor,
+          // color: whiteColor,
         ),
         child: Row(
           children: [
@@ -437,77 +501,76 @@ class TurfTile extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          TextButton.icon(
-                            style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              minimumSize: Size(100.0, 30.0),
-                              // fixedSize: Size.zero,
-                              backgroundColor: secondaryColor,
-                            ),
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                _createRoute(
-                                  Individualturf(details, userDetails),
-                                ),
-                              );
-                            },
-                            icon: Icon(
-                              Icons.north_east,
-                              color: whiteColor,
-                              size: 11.0,
-                            ),
-                            iconAlignment: IconAlignment.end,
-                            label: Text(
-                              "Read More",
-                              style: TextStyle(
-                                fontSize: 13.0,
-                                color: whiteColor,
-                              ),
-                            ),
+
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 15.0,
+                            vertical: 7.0,
                           ),
-                          Container(
-                            // width: 100.0,
-                            height: 30.0,
-                            decoration: BoxDecoration(
-                              color: secondaryColor,
-                              borderRadius: BorderRadius.circular(30.0),
+                          minimumSize: Size(100.0, 30.0),
+                          // fixedSize: Size.zero,
+                          backgroundColor: secondaryColor,
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            _createRoute(
+                              Individualturf(details, userDetails),
                             ),
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 8.0),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    "4.9",
-                                    style: TextStyle(
-                                      color: whiteColor,
-                                      fontSize: 11.0,
-                                    ),
-                                  ),
-                                  Icon(
-                                    Icons.star,
-                                    size: 13.0,
-                                    color: Colors.yellow,
-                                  ),
-                                  Icon(
-                                    Icons.star,
-                                    size: 13.0,
-                                    color: Colors.yellow,
-                                  ),
-                                  Icon(
-                                    Icons.star,
-                                    size: 13.0,
-                                    color: Colors.yellow,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                        ],
+                          );
+                        },
+                        icon: Icon(
+                          Icons.north_east,
+                          color: whiteColor,
+                          size: 13.0,
+                        ),
+                        iconAlignment: IconAlignment.end,
+                        label: Text(
+                          "Read More",
+                          style: TextStyle(
+                            fontSize: 15.0,
+                            color: whiteColor,
+                          ),
+                        ),
                       ),
+                      // Container(
+                      //   // width: 100.0,
+                      //   height: 30.0,
+                      //   decoration: BoxDecoration(
+                      //     color: secondaryColor,
+                      //     borderRadius: BorderRadius.circular(30.0),
+                      //   ),
+                      //   child: Padding(
+                      //     padding:
+                      //         const EdgeInsets.symmetric(horizontal: 8.0),
+                      //     child: Row(
+                      //       children: [
+                      //         Text(
+                      //           "4.9",
+                      //           style: TextStyle(
+                      //             color: whiteColor,
+                      //             fontSize: 11.0,
+                      //           ),
+                      //         ),
+                      //         Icon(
+                      //           Icons.star,
+                      //           size: 13.0,
+                      //           color: Colors.yellow,
+                      //         ),
+                      //         Icon(
+                      //           Icons.star,
+                      //           size: 13.0,
+                      //           color: Colors.yellow,
+                      //         ),
+                      //         Icon(
+                      //           Icons.star,
+                      //           size: 13.0,
+                      //           color: Colors.yellow,
+                      //         ),
+                      //       ],
+                      //     ),
+                      //   ),
+                      // )
                     ],
                   ),
                 ),

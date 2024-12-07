@@ -440,7 +440,8 @@ class _IndividualturfState extends State<Individualturf> {
                                     onPressed: () {
                                       Navigator.of(context).push(
                                         _createRoute(
-                                          BookingScreen(widget.details),
+                                          BookingScreen(widget.details,
+                                              widget.userDetails),
                                         ),
                                       );
                                     },

@@ -1,6 +1,8 @@
 import 'package:turf_arena/constants.dart';
 import 'package:turf_arena/screens/LoginScreen.dart';
 import 'package:turf_arena/screens/OtpScreen.dart';
+import 'package:turf_arena/screens/SetProfile.dart';
+import 'package:turf_arena/screens/VerifyPhone.dart';
 import 'package:turf_arena/screens/app.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -19,8 +21,11 @@ class _RegisterscreenState extends State<Registerscreen> {
   final _auth = FirebaseAuth.instance;
   bool showSpinner = false;
   bool loadGoogleSign = false;
-  late String username;
-  late String password;
+  bool isLoaded = false;
+  String? email;
+  String? password;
+
+  late Map<String, dynamic> userData;
 
   List<String> scopes = <String>[
     'email',
@@ -54,6 +59,26 @@ class _RegisterscreenState extends State<Registerscreen> {
       'https://www.googleapis.com/auth/contacts.readonly',
     ],
   );
+  SnackBar snackBar(String msg) {
+    return SnackBar(
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+        30.0,
+      )),
+      padding: EdgeInsets.symmetric(
+        horizontal: 20.0,
+        vertical: 20.0,
+      ),
+      backgroundColor: Colors.red[400],
+      content: Text(
+        msg,
+        style: TextStyle(
+          fontSize: 17.0,
+        ),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
 
   var acs = ActionCodeSettings(
       // URL you want to redirect back to. The domain (www.example.com) for this
@@ -69,57 +94,112 @@ class _RegisterscreenState extends State<Registerscreen> {
       // minimumVersion
       androidMinimumVersion: '12');
 
-  Future<User?> registerWithEmail(String email, String password) async {
+  Future<User?> registerWithEmail() async {
     try {
-      _auth.sendSignInLinkToEmail(email: email, actionCodeSettings: acs);
-      // UserCredential userCredential =
-      //     await _auth.createUserWithEmailAndPassword(
-      //   email: email,
-      //   password: password,
-      // );
-      // return userCredential.user;
-    } catch (e) {
+      // _auth.sendSignInLinkToEmail(email: email, actionCodeSettings: acs);
+
+      if (email == null || password == null) {}
+      UserCredential userCredential =
+          await _auth.createUserWithEmailAndPassword(
+        email: email!,
+        password: password!,
+      );
+      return userCredential.user;
+    } on FirebaseAuthException catch (e) {
       print('Error in Email/Password Registration: $e');
+      print(e.code);
+      setState(() {
+        showSpinner = false;
+      });
+      if (e.code == "email-already-in-use") {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(snackBar("Email Already Used. Try Login!"));
+      } else if (e.code == "weak-password") {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(snackBar("Password Must Contain 8 Characters."));
+      } else if (e.code == 'invalid-email') {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(snackBar("Email Address is Invalid."));
+        print('Error: The email address is invalid.');
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(snackBar("Error Occured. Try Again!"));
+        print('Unhandled Error: ${e.message}');
+      }
       return null;
     }
   }
 
   Future<void> addUserToFirestore(User user) async {
     try {
+      // print(user.uid);
       DocumentSnapshot userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
+      // print(userDoc.exists);
       if (!userDoc.exists) {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'uid': user.uid,
-          'email': user.email,
-          'displayName': user.displayName ?? '',
-          'photoURL': user.photoURL ?? '',
-          'createdAt': FieldValue.serverTimestamp(),
+        if (user.displayName != null) {
+          setState(() {
+            userData = {
+              'uid': user.uid,
+              'email': user.email,
+              'displayName': user.displayName,
+              'photoURL': user.photoURL,
+              'createdAt': FieldValue.serverTimestamp(),
+              'liked': [],
+            };
+          });
+        } else {
+          setState(() {
+            userData = {
+              'uid': user.uid,
+              'email': user.email,
+              'createdAt': FieldValue.serverTimestamp(),
+              'liked': [],
+            };
+          });
+        }
+        // print(userData);
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .set(userData);
+      } else {
+        // print(userDoc.data());
+        setState(() {
+          userData = userDoc.data() as Map<String, dynamic>;
         });
+
+        print("User Already Exixts");
       }
     } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(snackBar("Error Occured. Try Again!"));
       print('Error adding user to Firestore: $e');
     }
   }
 
-  void registerAndAddToFirestore(String email, String password) async {
+  void registerAndAddToFirestore() async {
     // if (_formKey.currentState!.validate()) {
     // String email = _emailController.text.trim();
     // String password = _passwordController.text.trim();
-
-    User? user = await registerWithEmail(email, password);
-    if (user != null) {
-      await addUserToFirestore(user);
-      print('User registered and added to Firestore');
-      Navigator.push(context, MaterialPageRoute(builder: (context) {
-        return App({
-          'u_id': user.uid,
-          'username': user.displayName,
-          'email': user.email,
-        });
-      }));
+    if (email == null || password == null) {
+      setState(() {
+        showSpinner = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(snackBar("Enter All Fields!"));
+    } else {
+      User? user = await registerWithEmail();
+      if (user != null) {
+        await addUserToFirestore(user);
+        print('User registered and added to Firestore');
+        Navigator.of(context).push(_createRoute(
+          VerifyPhone(
+            userData,
+          ),
+        ));
+      }
     }
   }
 
@@ -140,31 +220,44 @@ class _RegisterscreenState extends State<Registerscreen> {
 
       if (!userDoc.exists) {
         // If the user doesn't exist, add them to Firestore
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'uid': user.uid,
-          'email': user.email,
-          'displayName': user.displayName,
-          'photoURL': user.photoURL,
-          'createdAt': FieldValue.serverTimestamp(),
+        setState(() {
+          userData = {
+            'uid': user.uid,
+            'email': user.email,
+            'displayName': user.displayName,
+            'photoURL': user.photoURL,
+            'createdAt': FieldValue.serverTimestamp(),
+          };
         });
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .set(userData);
       }
     } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(snackBar("Error Occured. Try Again!"));
       print('Error adding Google user: $e');
     }
   }
 
-  void signInWithGoogleAndAddToFirestore() async {
+  Future signInWithGoogleAndAddToFirestore() async {
     User? user = await signInWithGoogle();
     if (user != null) {
       await addUserToFirestore(user);
+      // print(user);
+      // // print(userData);
       print('User signed in with Google and added to Firestore');
-      Navigator.push(context, MaterialPageRoute(builder: (context) {
-        return App({
-          'u_id': user.uid,
-          'username': user.displayName,
-          'email': user.email,
-        });
-      }));
+
+      Navigator.of(context).push(_createRoute(
+        App(
+          userData,
+        ),
+      ));
+      return userData;
+    } else {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(snackBar("Error Occured. Try Again!"));
     }
   }
 
@@ -220,6 +313,9 @@ class _RegisterscreenState extends State<Registerscreen> {
           Navigator.of(context).push(_createRoute(
             Otpscreen(
               verificationId: verificationId,
+              userData: userData,
+              phoneNo: phoneController.text,
+              // url: "",
             ),
           ));
         },
@@ -304,9 +400,6 @@ class _RegisterscreenState extends State<Registerscreen> {
         // Access and print the user's display name (username) and email
         print('Username: ${user.displayName}');
         print('Email: ${user.email}');
-        setState(() {
-          loadGoogleSign = false;
-        });
       }
       return user;
     } catch (e) {
@@ -425,17 +518,17 @@ class _RegisterscreenState extends State<Registerscreen> {
                               TextField(
                                 onChanged: (value) {
                                   setState(() {
-                                    username = value;
+                                    email = value;
                                   });
                                 },
                                 controller: phoneController,
                                 // textInputAction: TextInputAction.search,
                                 decoration: kLoginFieldDecoration.copyWith(
-                                  hintText: 'Phone No.',
+                                  hintText: 'Email',
                                 ),
                               ),
                               SizedBox(
-                                height: 15.0,
+                                height: 10.0,
                               ),
                               TextField(
                                 obscureText: true,
@@ -451,23 +544,20 @@ class _RegisterscreenState extends State<Registerscreen> {
                                 ),
                               ),
                               SizedBox(
-                                height: 30.0,
+                                height: 20.0,
                               ),
                               TextButton(
                                 onPressed: () async {
-                                  print(username);
+                                  print(email);
                                   print(password);
 
                                   setState(() {
                                     showSpinner = true;
                                   });
-                                  _verificationId == null
-                                      ? _sendOtp()
-                                      : _verifyOtp();
 
                                   // verifyPhoneNumber();
                                   // sendEmailVerificationLink(username);
-                                  // registerAndAddToFirestore(username, password);
+                                  registerAndAddToFirestore();
                                 },
                                 style: TextButton.styleFrom(
                                     fixedSize: Size(100.0, 55.0),
@@ -480,7 +570,12 @@ class _RegisterscreenState extends State<Registerscreen> {
                                     // fixedSize: Size(double.infinity, 50.0),
                                     ),
                                 child: showSpinner
-                                    ? CircularProgressIndicator()
+                                    ? Transform.scale(
+                                        scale: 0.7,
+                                        child: CircularProgressIndicator(
+                                          color: whiteColor,
+                                        ),
+                                      )
                                     : Text(
                                         "Register",
                                         style: TextStyle(
@@ -495,16 +590,18 @@ class _RegisterscreenState extends State<Registerscreen> {
                               TextButton(
                                 onPressed: () async {
                                   setState(() {
-                                    showSpinner = true;
+                                    loadGoogleSign = true;
                                   });
                                   try {
-                                    signInWithGoogleAndAddToFirestore();
-                                    setState(() {
-                                      showSpinner = false;
-                                    });
+                                    await signInWithGoogleAndAddToFirestore();
                                   } catch (e) {
                                     print(e);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        snackBar("Error Occured. Try Again!"));
                                   }
+                                  setState(() {
+                                    loadGoogleSign = false;
+                                  });
                                 },
                                 style: TextButton.styleFrom(
                                     fixedSize: Size(100.0, 55.0),
@@ -517,30 +614,44 @@ class _RegisterscreenState extends State<Registerscreen> {
                                     // fixedSize: Size(double.infinity, 50.0),
                                     ),
                                 child: loadGoogleSign
-                                    ? CircularProgressIndicator(
-                                        color: whiteColor,
-                                      )
-                                    : Text(
-                                        "Sign in With Google",
-                                        style: TextStyle(
+                                    ? Transform.scale(
+                                        scale: 0.7,
+                                        child: CircularProgressIndicator(
                                           color: whiteColor,
-                                          fontSize: 18.0,
                                         ),
+                                      )
+                                    : Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Image.asset(
+                                            "images/google.png",
+                                            height: 20.0,
+                                          ),
+                                          SizedBox(
+                                            width: 10.0,
+                                          ),
+                                          Text(
+                                            "Sign up With Google",
+                                            style: TextStyle(
+                                              color: whiteColor,
+                                              fontSize: 18.0,
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                              ),
-                              SizedBox(
-                                height: 30.0,
                               ),
                               TextButton(
                                 onPressed: () {
-                                  Navigator.push(context,
-                                      MaterialPageRoute(builder: (context) {
-                                    return LoginScreen();
-                                  }));
+                                  Navigator.of(context).push(
+                                    _createRoute(
+                                      LoginScreen(),
+                                    ),
+                                  );
                                 },
                                 style: TextButton.styleFrom(
                                     padding:
-                                        EdgeInsets.symmetric(vertical: 10.0),
+                                        EdgeInsets.symmetric(vertical: 15.0),
                                     // backgroundColor: secondaryColor,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12.0),
@@ -551,7 +662,7 @@ class _RegisterscreenState extends State<Registerscreen> {
                                   "Already have an Account?",
                                   style: TextStyle(
                                     color: whiteColor,
-                                    fontSize: 18.0,
+                                    fontSize: 16.0,
                                   ),
                                 ),
                               ),

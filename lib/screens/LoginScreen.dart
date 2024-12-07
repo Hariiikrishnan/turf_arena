@@ -19,9 +19,29 @@ class _LoginScreenState extends State<LoginScreen> {
   bool showSpinner = false;
   bool loadGoogleSign = false;
   bool isLoaded = false;
-  late String username;
-  late String password;
+  String? username;
+  String? password;
   late Map userDetails;
+
+  SnackBar snackBar(String msg) {
+    return SnackBar(
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+        30.0,
+      )),
+      padding: EdgeInsets.symmetric(
+        horizontal: 20.0,
+        vertical: 20.0,
+      ),
+      backgroundColor: Colors.red[400],
+      content: Text(
+        msg,
+        style: TextStyle(
+          fontSize: 17.0,
+        ),
+      ),
+    );
+  }
 
   List<String> scopes = <String>[
     'email',
@@ -67,18 +87,22 @@ class _LoginScreenState extends State<LoginScreen> {
           isLoaded = true;
         });
         await fetchUser(user);
-
         Navigator.of(context).push(
           _createRoute(
             App(userDetails),
           ),
         );
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(snackBar("Try Register and then Sign In."));
       }
 
       return user;
-    } on Exception catch (e) {
+    } catch (e) {
       // TODO
-      print('exception->$e');
+      // print(e.code);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(snackBar("Error Occured. Try Again!"));
     }
   }
 
@@ -90,9 +114,17 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       QuerySnapshot snapshot = await query.get();
 
-      setState(() {
-        // loadingData = false;
-        // _isLoading = false;
+      // setState(() {
+      // loadingData = false;
+      // _isLoading = false;
+      print(snapshot.docs);
+      if (snapshot.docs.isEmpty) {
+        setState(() {
+          isLoaded = false;
+        });
+        ScaffoldMessenger.of(context)
+            .showSnackBar(snackBar("Please Try Again!"));
+      } else {
         snapshot.docs.forEach((doc) {
           print(doc.data());
           setState(() {
@@ -100,7 +132,8 @@ class _LoginScreenState extends State<LoginScreen> {
           });
           // turfList.add(doc.data() as Map<String, dynamic>);
         });
-      });
+        // });
+      }
     } catch (error) {
       print("Error getting documents: $error");
     }
@@ -200,7 +233,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                               SizedBox(
-                                height: 15.0,
+                                height: 10.0,
                               ),
                               TextField(
                                 obscureText: true,
@@ -213,37 +246,132 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                               SizedBox(
-                                height: 30.0,
+                                height: 20.0,
                               ),
                               TextButton(
                                 onPressed: () async {
-                                  setState(() {
-                                    showSpinner = true;
-                                  });
-                                  try {
-                                    final loggedInUser =
-                                        await _auth.signInWithEmailAndPassword(
-                                            email: username,
-                                            password: password);
-
-                                    if (loggedInUser != null) {
-                                      print("Logged");
-                                      Navigator.of(context).push(
-                                        _createRoute(
-                                          App({
-                                            'userid': loggedInUser.user?.uid,
-                                            'username':
-                                                loggedInUser.user?.displayName,
-                                            'email': loggedInUser.user?.email,
-                                          }),
+                                  if (username == null || password == null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                          30.0,
+                                        )),
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: 20.0,
+                                          vertical: 20.0,
                                         ),
+                                        backgroundColor: Colors.red[400],
+                                        content: Text(
+                                          "Enter all Fields!",
+                                          style: TextStyle(
+                                            fontSize: 17.0,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  } else {
+                                    setState(() {
+                                      showSpinner = true;
+                                    });
+
+                                    try {
+                                      final loggedInUser = await _auth
+                                          .signInWithEmailAndPassword(
+                                              email: username!,
+                                              password: password!);
+
+                                      if (loggedInUser != null) {
+                                        print("Logged");
+                                        await fetchUser(loggedInUser.user!);
+                                        Navigator.of(context).push(
+                                          _createRoute(
+                                            App(userDetails),
+                                          ),
+                                        );
+                                      } else {
+                                        print("No user Found");
+                                      }
+                                      setState(() {
+                                        showSpinner = false;
+                                      });
+                                    } on FirebaseAuthException catch (e) {
+                                      switch (e.code) {
+                                        case 'invalid-email':
+                                          // print("The email address is invalid.");
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            snackBar(
+                                                "Email Address is Invalid."),
+                                          );
+                                          break;
+                                        case 'user-disabled':
+                                          // print(
+                                          // "The user account has been disabled.");
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            snackBar(
+                                                "User Account has been Disabled."),
+                                          );
+                                          break;
+                                        case 'user-not-found':
+                                          // print("No user found with this email.");
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            snackBar(
+                                                "No User Found with this Email."),
+                                          );
+                                          break;
+                                        case 'wrong-password':
+                                          // print("Incorrect password.");
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            snackBar(
+                                                "Incorrect Password. Try Again!"),
+                                          );
+                                          break;
+                                        case 'too-many-requests':
+                                          // print(
+                                          // "Too many login attempts. Please try again later.");
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            snackBar(
+                                                "Too Many Attemps. Try Later!"),
+                                          );
+                                          break;
+                                        case 'network-request-failed':
+                                          // print(
+                                          // "Network error occurred. Check your connection.");
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            snackBar(
+                                                "Network error occurred. Check your connection."),
+                                          );
+                                          break;
+                                        case 'operation-not-allowed':
+                                          print(
+                                              "Email/password sign-in is not enabled.");
+                                          break;
+                                        default:
+                                          // print(
+                                          // "Unhandled FirebaseAuthException: ${e.code}");
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            snackBar("Please Try Again!"),
+                                          );
+                                          break;
+                                      }
+                                    } catch (e) {
+                                      // print(e);
+                                      print(e.toString());
+                                      setState(() {
+                                        showSpinner = false;
+                                      });
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        snackBar("Please Try Again!"),
                                       );
                                     }
-                                    setState(() {
-                                      showSpinner = false;
-                                    });
-                                  } catch (e) {
-                                    print(e);
                                   }
                                 },
                                 style: TextButton.styleFrom(
@@ -257,9 +385,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                     // fixedSize: Size(double.infinity, 50.0),
                                     ),
                                 child: showSpinner
-                                    ? CircularProgressIndicator(
-                                        // value: 0.5,
-                                        color: whiteColor,
+                                    ? Transform.scale(
+                                        scale: 0.7,
+                                        child: CircularProgressIndicator(
+                                          // value: 0.5,
+                                          color: whiteColor,
+                                        ),
                                       )
                                     : Text(
                                         "Login",
@@ -274,22 +405,20 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               TextButton(
                                 onPressed: () async {
-                                  setState(() {
-                                    showSpinner = true;
-                                  });
                                   try {
-                                    signInWithGoogle();
-                                    setState(() {
-                                      showSpinner = false;
-                                    });
+                                    await signInWithGoogle();
                                   } catch (e) {
                                     print(e);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      snackBar("Please Try Again!"),
+                                    );
                                   }
                                 },
                                 style: TextButton.styleFrom(
                                     fixedSize: Size(100.0, 55.0),
                                     // padding:
                                     // EdgeInsets.symmetric(vertical: 10.0),
+
                                     backgroundColor: secondaryColor,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12.0),
@@ -297,8 +426,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                     // fixedSize: Size(double.infinity, 50.0),
                                     ),
                                 child: loadGoogleSign
-                                    ? CircularProgressIndicator(
-                                        color: whiteColor,
+                                    ? Transform.scale(
+                                        scale: 0.7,
+                                        child: CircularProgressIndicator(
+                                          color: whiteColor,
+                                        ),
                                       )
                                     : isLoaded
                                         ? Text(
@@ -308,12 +440,25 @@ class _LoginScreenState extends State<LoginScreen> {
                                               fontSize: 18.0,
                                             ),
                                           )
-                                        : Text(
-                                            "Sign in With Google",
-                                            style: TextStyle(
-                                              color: whiteColor,
-                                              fontSize: 18.0,
-                                            ),
+                                        : Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Image.asset(
+                                                "images/google.png",
+                                                height: 20.0,
+                                              ),
+                                              SizedBox(
+                                                width: 10.0,
+                                              ),
+                                              Text(
+                                                "Sign in With Google",
+                                                style: TextStyle(
+                                                  color: whiteColor,
+                                                  fontSize: 18.0,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                               ),
                               TextButton(
@@ -326,7 +471,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 },
                                 style: TextButton.styleFrom(
                                     padding:
-                                        EdgeInsets.symmetric(vertical: 10.0),
+                                        EdgeInsets.symmetric(vertical: 15.0),
                                     // backgroundColor: secondaryColor,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12.0),
@@ -337,7 +482,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   "Don't have an Account?",
                                   style: TextStyle(
                                     color: whiteColor,
-                                    fontSize: 18.0,
+                                    fontSize: 16.0,
                                   ),
                                 ),
                               ),
